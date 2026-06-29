@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vega Nesting</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="authBar">
+        <span id="userInfo" style="font-weight:bold; margin-right: 1rem;"></span>
+        <input id="usernameInput" placeholder="Kullanıcı adı" style="width: 150px;">
+        <button type="button" class="secondary" onclick="login()">Giriş</button>
+        <button type="button" class="danger" onclick="logout()">Çıkış</button>
+    </div>
+
+    <div id="projectPanel" style="display:none;">
+        <h3>Projelerim</h3>
+        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+            <input type="text" id="projectName" placeholder="Proje adı" style="flex:1; padding:0.5rem;">
+            <button type="button" class="primary" onclick="saveProject()">Kaydet</button>
+            <button type="button" class="secondary" onclick="clearProject()">Yeni</button>
+        </div>
+        <ul id="projectList"></ul>
+        <div id="projectFilesInfo" style="display:none; margin-top:0.5rem; color:#555;"></div>
+    </div>
+
+    <h1>Vega Nesting - 2D Sac Levha Yerleştirme</h1>
+
+    <form id="nestForm">
+        <div class="form-row">
+            <div>
+                <label for="sheetWidth">Sac Genişliği (mm)</label>
+                <input type="number" id="sheetWidth" name="sheetWidth" step="0.1" required>
+            </div>
+            <div>
+                <label for="sheetHeight">Sac Yüksekliği (mm)</label>
+                <input type="number" id="sheetHeight" name="sheetHeight" step="0.1" required>
+            </div>
+            <div>
+                <label for="space">Boşluk Payı (mm)</label>
+                <input type="number" id="space" name="space" step="0.1" value="0">
+            </div>
+            <div>
+                <label for="sheetCount">Maks. Sac Adedi</label>
+                <input type="number" id="sheetCount" name="sheetCount" step="1" value="1" min="1">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <input type="checkbox" id="addOutShape" name="addOutShape">
+                <label for="addOutShape" style="margin:0;">Dış Çizgi Ekle (OUT_SHAPE)</label>
+            </div>
+        </div>
+
+        <div id="fileInputSection">
+            <h3>Parçalar</h3>
+            <div id="fileRows">
+                <div class="file-row">
+                    <input type="file" name="files" accept=".dxf" required>
+                    <input type="number" name="count" value="1" min="1" placeholder="Adet">
+                    <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                    <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
+                </div>
+            </div>
+            <button type="button" class="secondary" onclick="addRow()">+ Parça Ekle</button>
+        </div>
+
+        <div id="projectFilesSection" style="display:none;">
+            <h3>Proje Dosyaları</h3>
+            <ul id="projectFileList" style="padding-left: 1.5rem;"></ul>
+        </div>
+
+        <div style="margin-top: 1rem;">
+            <button type="submit" class="primary">Hesapla</button>
+        </div>
+    </form>
+
+    <div id="results"></div>
+
+    <script>
+        const activeProjectIdKey = 'activeProjectId';
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function loadUser() {
+            try {
+                const resp = await fetch('/api/me');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    document.getElementById('userInfo').textContent = 'Kullanıcı: ' + data.username;
+                    document.getElementById('usernameInput').style.display = 'none';
+                    document.querySelector('#authBar button:first-of-type').style.display = 'none';
+                    document.getElementById('projectPanel').style.display = 'block';
+                    loadProjects();
+                } else {
+                    document.getElementById('userInfo').textContent = '';
+                    document.getElementById('projectPanel').style.display = 'none';
+                }
+            } catch (e) {
+                document.getElementById('userInfo').textContent = '';
+                document.getElementById('projectPanel').style.display = 'none';
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('usernameInput').value.trim();
+            if (!username) { alert('Kullanıcı adı girin'); return; }
+            const fd = new FormData();
+            fd.append('username', username);
+            const resp = await fetch('/api/login', { method: 'POST', body: fd });
+            if (resp.ok) {
+                loadUser();
+            } else {
+                alert('Giriş başarısız');
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            location.reload();
+        }
+
+        async function loadProjects() {
+            try {
+                const resp = await fetch('/api/projects');
+                const projects = await resp.json();
+                const list = document.getElementById('projectList');
+                list.innerHTML = '';
+                projects.forEach(p => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <a href="#" onclick="loadProject(${p.id}, event)" style="font-weight:bold;">${escapeHtml(p.name)}</a>
+                        <span style="color:#555;"> - ${p.sheet_width} x ${p.sheet_height} mm</span>
+                        <button type="button" class="danger" style="padding:0.25rem 0.5rem; font-size:0.8rem;" onclick="deleteProject(${p.id})">Sil</button>
+                    `;
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                console.error('Projects could not be loaded', e);
+            }
+        }
+
+        async function saveProject() {
+            const name = document.getElementById('projectName').value.trim();
+            if (!name) { alert('Proje adı girin'); return; }
+
+            const activeId = localStorage.getItem(activeProjectIdKey);
+            const isUpdate = !!activeId;
+
+            const form = document.getElementById('nestForm');
+            const fd = new FormData(form);
+            fd.append('name', name);
+
+            const url = isUpdate ? `/api/projects/${activeId}` : '/api/projects';
+            const method = isUpdate ? 'PUT' : 'POST';
+
+            try {
+                const resp = await fetch(url, { method, body: fd });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || 'Kaydedilemedi');
+                }
+                const data = await resp.json();
+                localStorage.setItem(activeProjectIdKey, data.project_id || activeId);
+                loadProjects();
+                if (!isUpdate) {
+                    document.getElementById('projectName').value = '';
+                }
+                alert(isUpdate ? 'Güncellendi' : 'Kaydedildi');
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function loadProject(id, event) {
+            if (event) event.preventDefault();
+            try {
+                const resp = await fetch(`/api/projects/${id}`);
+                if (!resp.ok) { alert('Proje yüklenemedi'); return; }
+                const data = await resp.json();
+
+                document.getElementById('sheetWidth').value = data.project.sheet_width;
+                document.getElementById('sheetHeight').value = data.project.sheet_height;
+                document.getElementById('space').value = data.project.space;
+                document.getElementById('sheetCount').value = data.project.sheet_count;
+                document.getElementById('addOutShape').checked = !!data.project.add_out_shape;
+                document.getElementById('projectName').value = data.project.name;
+
+                localStorage.setItem(activeProjectIdKey, id);
+
+                const list = document.getElementById('projectFileList');
+                list.innerHTML = '';
+                data.files.forEach(f => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${escapeHtml(f.filename)}</strong> - Adet: ${f.count} - Dönüşler: ${Array.isArray(f.rotations) ? f.rotations.join(',') : ''}`;
+                    list.appendChild(li);
+                });
+
+                document.getElementById('fileInputSection').style.display = 'none';
+                document.getElementById('projectFilesSection').style.display = 'block';
+                document.getElementById('projectFilesInfo').style.display = 'block';
+                document.getElementById('projectFilesInfo').textContent = 'Yüklenen dosyalar projeden alınacak. Farklı dosyalar için Yeni butonuna basınız.';
+
+                loadProjects();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        async function deleteProject(id) {
+            if (!confirm('Proje silinsin mi?')) return;
+            const resp = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+            if (resp.ok) {
+                const current = localStorage.getItem(activeProjectIdKey);
+                if (current == id) {
+                    clearProject();
+                }
+                loadProjects();
+            } else {
+                alert('Silinemedi');
+            }
+        }
+
+        function clearProject() {
+            localStorage.removeItem(activeProjectIdKey);
+            document.getElementById('projectName').value = '';
+            document.getElementById('fileInputSection').style.display = 'block';
+            document.getElementById('projectFilesSection').style.display = 'none';
+            document.getElementById('projectFilesInfo').style.display = 'none';
+            document.getElementById('results').innerHTML = '';
+            const container = document.getElementById('fileRows');
+            container.innerHTML = `
+                <div class="file-row">
+                    <input type="file" name="files" accept=".dxf" required>
+                    <input type="number" name="count" value="1" min="1" placeholder="Adet">
+                    <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                    <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
+                </div>
+            `;
+        }
+
+        function addRow() {
+            const container = document.getElementById('fileRows');
+            const div = document.createElement('div');
+            div.className = 'file-row';
+            div.innerHTML = `
+                <input type="file" name="files" accept=".dxf" required>
+                <input type="number" name="count" value="1" min="1" placeholder="Adet">
+                <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
+            `;
+            container.appendChild(div);
+        }
+
+        function removeRow(btn) {
+            btn.parentElement.remove();
+        }
+
+        document.getElementById('nestForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Hesaplanıyor...</p>';
+
+            const formData = new FormData(e.target);
+            const sheetWidth = formData.get('sheetWidth');
+            const sheetHeight = formData.get('sheetHeight');
+            const space = formData.get('space');
+            const sheetCount = formData.get('sheetCount');
+            const addOutShape = formData.has('addOutShape');
+
+            const files = formData.getAll('files');
+            const counts = formData.getAll('count');
+            const rotations = formData.getAll('rotations');
+
+            const fd = new FormData();
+            fd.append('sheetWidth', sheetWidth);
+            fd.append('sheetHeight', sheetHeight);
+            fd.append('space', space);
+            fd.append('sheetCount', sheetCount);
+            fd.append('addOutShape', addOutShape ? 'true' : 'false');
+            fd.append('counts', JSON.stringify(counts.map(Number)));
+            fd.append('rotations', JSON.stringify(rotations.map(r => r ? r.split(',').map(Number) : [])));
+
+            const activeProjectId = localStorage.getItem(activeProjectIdKey);
+            if (activeProjectId) {
+                fd.append('project_id', activeProjectId);
+            } else {
+                for (const file of files) {
+                    fd.append('files', file);
+                }
+            }
+
+            try {
+                const resp = await fetch('/api/nest', { method: 'POST', body: fd });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.detail || 'Hata oluştu');
+                }
+
+                const jobId = data.job_id;
+                pollStatus(jobId, results);
+            } catch (err) {
+                results.innerHTML = `<div class="error">${err.message}</div>`;
+            }
+        });
+
+        async function pollStatus(jobId, container) {
+            const interval = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/status/${jobId}`);
+                    const data = await resp.json();
+                    if (data.status === 'done') {
+                        clearInterval(interval);
+                        renderResults(jobId, data, container);
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        container.innerHTML = `<div class="error">Hata: ${data.error}</div>`;
+                    } else {
+                        container.innerHTML = '<p>Hesaplama devam ediyor...</p>';
+                    }
+                } catch (e) {
+                    container.innerHTML = `<div class="error">Durum kontrolü hatası</div>`;
+                    clearInterval(interval);
+                }
+            }, 1000);
+        }
+
+        function renderResults(jobId, data, container) {
+            const stats = data.stats;
+            const files = data.output_files || [];
+            let html = `<div class="result-item success"><strong>Tamamlandı</strong><br>`;
+            html += `İstenen: ${stats.requested} parça<br>`;
+            html += `Yerleştirilen: ${stats.placed} parça<br>`;
+            html += `Kullanılan sac: ${stats.sheet_count} adet<br>`;
+            if (!stats.is_all_placed) {
+                html += `<span style="color:#dc2626">Uyarı: Tüm parçalar yerleştirilemedi!</span>`;
+            }
+            html += `</div>`;
+
+            if (files.length === 1) {
+                html += `<div class="result-item"><a href="/api/result/${jobId}" download>Sonucu İndir (DXF)</a></div>`;
+            } else {
+                html += `<div class="result-item"><strong>Sonuç DXF'leri:</strong><br>`;
+                files.forEach(f => {
+                    html += `<a href="/api/result/${jobId}/${f}" download>${f}</a><br>`;
+                });
+                html += `</div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        loadUser();
+    </script>
+</body>
+</html>

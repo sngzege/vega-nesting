@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.venv
+venv
+.eggs
+*.egg-info
+dist
+build
+uploads/*
+output/*
+!uploads/.gitkeep
+!output/.gitkeep
+vega_nesting.db
+.pytest_cache
