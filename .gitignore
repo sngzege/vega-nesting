@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+.nuxt/
+.output/
+.data/
+.nitro/
+.cache/
+
+# IDE
+.idea/
+.fleet/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.secret.json
+.prod-secret.json
+**secret**.json
+
+# Large/external folders not needed for server
+nest2d-main/
+.mongo-data/
+.test-data/
+
+# Python
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+**/venv/**
+
+# Test artifacts
+.pytest_cache/
