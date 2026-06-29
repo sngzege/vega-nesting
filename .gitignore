@@ -42,3 +42,5 @@ nest2d-main/
 
 # Test artifacts
 .pytest_cache/
+
+nest2d-main
