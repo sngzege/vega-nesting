@@ -51,3 +51,7 @@ server/app/nohup.out
 # Output files
 server/app/output/
 server/app/uploads/
+
+# Docker (not used)
+**/Dockerfile
+**/docker-compose*.yml
