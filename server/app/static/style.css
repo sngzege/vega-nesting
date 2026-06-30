@@ -118,14 +118,18 @@ a:hover {
 .preview-svg {
     border: 1px solid #ddd;
     border-radius: 4px;
-    padding: 0.5rem;
+    padding: 0;
     margin-bottom: 0.5rem;
     background: #fff;
     overflow: hidden;
+    min-height: 150px;
+    position: relative;
 }
 .preview-svg svg {
     display: block;
-    margin: 0 auto;
+    width: 100%;
+    height: 100%;
+    user-select: none;
 }
 .preview-download {
     text-align: right;

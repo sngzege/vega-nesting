@@ -262,14 +262,17 @@
             btn.parentElement.remove();
         }
 
+        let lastSheetWidth = null;
+        let lastSheetHeight = null;
+
         document.getElementById('nestForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const results = document.getElementById('results');
             results.innerHTML = '<p>Hesaplanıyor...</p>';
 
             const formData = new FormData(e.target);
-            const sheetWidth = formData.get('sheetWidth');
-            const sheetHeight = formData.get('sheetHeight');
+            lastSheetWidth = parseFloat(formData.get('sheetWidth'));
+            lastSheetHeight = parseFloat(formData.get('sheetHeight'));
             const space = formData.get('space');
             const sheetCount = formData.get('sheetCount');
             const addOutShape = formData.has('addOutShape');
@@ -279,8 +282,8 @@
             const rotations = formData.getAll('rotations');
 
             const fd = new FormData();
-            fd.append('sheetWidth', sheetWidth);
-            fd.append('sheetHeight', sheetHeight);
+            fd.append('sheetWidth', lastSheetWidth);
+            fd.append('sheetHeight', lastSheetHeight);
             fd.append('space', space);
             fd.append('sheetCount', sheetCount);
             fd.append('addOutShape', addOutShape ? 'true' : 'false');
@@ -331,9 +334,70 @@
             }, 1000);
         }
 
+        function setupZoomPan(svgEl) {
+            let scale = 1;
+            let panX = 0, panY = 0;
+
+            const vb = svgEl.getAttribute('viewBox').split(' ').map(Number);
+            const origW = vb[2], origH = vb[3];
+
+            function updateViewBox() {
+                const w = origW * scale;
+                const h = origH * scale;
+                svgEl.setAttribute('viewBox', `${panX} ${panY} ${w} ${h}`);
+            }
+
+            svgEl.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const rect = svgEl.getBoundingClientRect();
+                const mx = (e.clientX - rect.left) / rect.width;
+                const my = (e.clientY - rect.top) / rect.height;
+
+                const factor = e.deltaY > 0 ? 1.1 : 0.9;
+                const newScale = Math.max(0.05, Math.min(50, scale * factor));
+
+                const focusX = panX + mx * origW * scale;
+                const focusY = panY + my * origH * scale;
+                panX = focusX - mx * origW * newScale;
+                panY = focusY - my * origH * newScale;
+                scale = newScale;
+                updateViewBox();
+            }, { passive: false });
+
+            let dragging = false, startX, startY, startPanX, startPanY;
+            svgEl.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                dragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startPanX = panX;
+                startPanY = panY;
+                svgEl.style.cursor = 'grabbing';
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                const dx = (e.clientX - startX) / rectWidth(svgEl) * origW * scale;
+                const dy = (e.clientY - startY) / rectHeight(svgEl) * origH * scale;
+                panX = startPanX - dx;
+                panY = startPanY - dy;
+                updateViewBox();
+            });
+            window.addEventListener('mouseup', () => {
+                if (dragging) {
+                    dragging = false;
+                    svgEl.style.cursor = '';
+                }
+            });
+        }
+
+        function rectWidth(el) { return el.getBoundingClientRect().width || 1; }
+        function rectHeight(el) { return el.getBoundingClientRect().height || 1; }
+
         function renderResults(jobId, data, container) {
             const stats = data.stats;
             const files = data.output_files || [];
+            const sw = lastSheetWidth;
+            const sh = lastSheetHeight;
             let html = `<div class="result-item success"><strong>Tamamlandı</strong><br>`;
             html += `İstenen: ${stats.requested} parça<br>`;
             html += `Yerleştirilen: ${stats.placed} parça<br>`;
@@ -351,8 +415,9 @@
             files.forEach((f, idx) => {
                 const sheetNum = idx + 1;
                 html += `<div class="result-item preview-item">`;
-                html += `<div class="preview-header"><strong>Sac ${sheetNum}</strong></div>`;
-                html += `<div class="preview-svg" id="preview-${jobId}-${sheetNum}"><p>Önizleme yükleniyor...</p></div>`;
+                html += `<div class="preview-header"><strong>Sac ${sheetNum}</strong> <span style="color:#999;font-size:0.85rem;">(tekerlek ile zoom, sürükle ile kaydır)</span></div>`;
+                const aspect = (sw && sh) ? (sh / sw * 100) : 50;
+                html += `<div class="preview-svg" id="preview-${jobId}-${sheetNum}" style="aspect-ratio:${sw || 1}/${sh || 1}; max-height:400px;"><p>Önizleme yükleniyor...</p></div>`;
                 html += `<div class="preview-download">`;
                 html += `<button type="button" class="primary" onclick="downloadWithName('${jobId}', '${f}', ${sheetNum})">İndir (DXF)</button>`;
                 html += `</div></div>`;
@@ -373,8 +438,10 @@
                         const svgEl = previewDiv.querySelector('svg');
                         if (svgEl) {
                             svgEl.style.width = '100%';
-                            svgEl.style.maxHeight = '300px';
+                            svgEl.style.height = '100%';
                             svgEl.style.background = '#fff';
+                            svgEl.style.cursor = 'grab';
+                            setupZoomPan(svgEl);
                         }
                     })
                     .catch(() => {

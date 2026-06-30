@@ -411,6 +411,8 @@ async def nest(
         "stats": None,
         "output_files": [],
         "error": None,
+        "sheet_width": sheetWidth,
+        "sheet_height": sheetHeight,
     }
 
     db_project_id = None
@@ -539,7 +541,14 @@ async def preview(job_id: str, sheet_index: int):
         raise HTTPException(status_code=404, detail="File missing")
 
     doc = ezdxf.readfile(str(file_path))
-    svg_str = create_svg_from_doc(doc, max_flattening_distance=0.1)
+    sw = job.get("sheet_width")
+    sh = job.get("sheet_height")
+    svg_str = create_svg_from_doc(
+        doc,
+        max_flattening_distance=0.1,
+        sheet_width=float(sw) if sw else None,
+        sheet_height=float(sh) if sh else None,
+    )
     return Response(content=svg_str, media_type="image/svg+xml")
 
 

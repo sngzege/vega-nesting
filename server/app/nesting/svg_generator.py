@@ -1,40 +1,61 @@
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from ezdxf.document import Drawing
 
+OUT_SHAPE_COLOR = "#CC5500"
+PART_COLOR = "#000000"
 
-def build_svg_string(drawing: "Drawing"):
+
+def build_svg_string(
+    drawing: "Drawing",
+    sheet_width: Optional[float] = None,
+    sheet_height: Optional[float] = None,
+):
     entities = drawing.modelspace()
 
-    flatten_entities = []
+    flattened = []
     for entity in entities:
         try:
-            pts, _ = flatten_entity(entity, 0.1)
-            flatten_entities.append(pts)
+            pts, _, layer = flatten_entity(entity, 0.1)
+            if not pts:
+                continue
+            layer_name = layer if layer else ""
+            flattened.append((pts, layer_name))
         except Exception:
             continue
 
-    if not flatten_entities:
+    if not flattened:
         return '<?xml version="1.0" encoding="utf-8"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'
 
-    min_x = min(coord.x for flatten in flatten_entities for coord in flatten)
-    min_y = min(coord.y for flatten in flatten_entities for coord in flatten)
-    max_x = max(coord.x for flatten in flatten_entities for coord in flatten)
-    max_y = max(coord.y for flatten in flatten_entities for coord in flatten)
+    all_pts = [pt for pts, _ in flattened for pt in pts]
 
-    width = max_x - min_x
-    height = max_y - min_y
-    stroke_width = min(width, height) * 0.002
+    if sheet_width and sheet_height:
+        vb_w = sheet_width
+        vb_h = sheet_height
+    else:
+        min_x = min(p.x for p in all_pts)
+        min_y = min(p.y for p in all_pts)
+        max_x = max(p.x for p in all_pts)
+        max_y = max(p.y for p in all_pts)
+        vb_w = max_x - min_x
+        vb_h = max_y - min_y
+
+    stroke_w = min(vb_w, vb_h) * 0.002
 
     parts = []
     parts.append('<?xml version="1.0" encoding="utf-8"?>')
-    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}mm" height="{height}mm" viewBox="0 0 {width} {height}">')
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{vb_w}mm" height="{vb_h}mm" viewBox="0 0 {vb_w} {vb_h}">'
+    )
 
-    for flatten in flatten_entities:
-        coords_str = " ".join([f"{coord.x - min_x} {coord.y - min_y}" for coord in flatten])
-        parts.append(f'<path d="M {coords_str} Z" fill="none" stroke="#FF0000" stroke-width="{stroke_width}" />')
+    for pts, layer_name in flattened:
+        color = OUT_SHAPE_COLOR if layer_name == "OUT_SHAPE" else PART_COLOR
+        coords = " ".join(f"{p.x} {p.y}" for p in pts)
+        parts.append(
+            f'<path d="M {coords} Z" fill="none" stroke="{color}" stroke-width="{stroke_w}" />'
+        )
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -47,6 +68,7 @@ def flatten_entity(entity, tol: float):
         return Point(float(v[0]), float(v[1]))
 
     h = entity.dxf.handle
+    layer = entity.dxf.layer
     kind = entity.dxftype()
 
     if kind == "LINE":
@@ -76,8 +98,13 @@ def flatten_entity(entity, tol: float):
     else:
         raise Exception(f"Unsupported entity type: {kind} (handle: {h})")
 
-    return pts, h
+    return pts, h, layer
 
 
-def create_svg_from_doc(doc: "Drawing", max_flattening_distance: float):
-    return build_svg_string(doc)
+def create_svg_from_doc(
+    doc: "Drawing",
+    max_flattening_distance: float,
+    sheet_width: Optional[float] = None,
+    sheet_height: Optional[float] = None,
+):
+    return build_svg_string(doc, sheet_width=sheet_width, sheet_height=sheet_height)
