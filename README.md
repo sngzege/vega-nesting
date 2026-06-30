@@ -57,14 +57,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000` in your browser.
 
-### Docker
 
-```bash
-cd server
-docker compose up --build
-```
-
-The multi-stage Dockerfile compiles the Rust engine first, then copies the binary into the Python runtime. One command and you're running.
 
 ## Usage
 
