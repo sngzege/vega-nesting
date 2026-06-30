@@ -525,7 +525,8 @@ async def preview(job_id: str, sheet_index: int):
         if job["status"] != "done":
             raise HTTPException(status_code=400, detail="Job not completed yet")
 
-    output_files = job.get("output_files", [])
+    raw = job.get("output_files", [])
+    output_files = json.loads(raw) if isinstance(raw, str) else raw
     if not output_files:
         raise HTTPException(status_code=404, detail="No output files")
 
