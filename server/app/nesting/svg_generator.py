@@ -8,11 +8,6 @@ if TYPE_CHECKING:
 def build_svg_string(drawing: "Drawing"):
     entities = drawing.modelspace()
 
-    def _vec2(v):
-        from shapely.geometry import Point
-
-        return Point(float(v[0]), float(v[1]))
-
     flatten_entities = []
     for entity in entities:
         try:
@@ -47,6 +42,9 @@ def build_svg_string(drawing: "Drawing"):
 
 def flatten_entity(entity, tol: float):
     from shapely.geometry import Point
+
+    def _vec2(v):
+        return Point(float(v[0]), float(v[1]))
 
     h = entity.dxf.handle
     kind = entity.dxftype()
