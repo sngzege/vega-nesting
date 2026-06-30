@@ -12,11 +12,14 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import ezdxf
+
 from . import database as db
 from .nesting.dxf_utils import read_dxf
 from .nesting.build_geometry import build_geometry
 from .nesting.engine import nesting_process
 from .nesting.input_builder import build_item
+from .nesting.svg_generator import create_svg_from_doc
 
 app = FastAPI(title="Vega Nesting")
 
@@ -511,8 +514,36 @@ async def status(job_id: str):
     }
 
 
+@app.get("/api/preview/{job_id}/{sheet_index}")
+async def preview(job_id: str, sheet_index: int):
+    if job_id not in JOBS:
+        job = db.get_job_by_job_id(job_id)
+        if not job or job["status"] != "done":
+            raise HTTPException(status_code=404, detail="Job not found or not completed")
+    else:
+        job = JOBS[job_id]
+        if job["status"] != "done":
+            raise HTTPException(status_code=400, detail="Job not completed yet")
+
+    output_files = job.get("output_files", [])
+    if not output_files:
+        raise HTTPException(status_code=404, detail="No output files")
+
+    if sheet_index < 1 or sheet_index > len(output_files):
+        raise HTTPException(status_code=404, detail=f"Sheet index out of range. Available: 1-{len(output_files)}")
+
+    fname = output_files[sheet_index - 1]
+    file_path = OUTPUT_DIR / fname
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+
+    doc = ezdxf.readfile(str(file_path))
+    svg_str = create_svg_from_doc(doc, max_flattening_distance=0.1)
+    return Response(content=svg_str, media_type="image/svg+xml")
+
+
 @app.get("/api/result/{job_id}/{filename}")
-async def result(job_id: str, filename: str):
+async def result(job_id: str, filename: str, name: Optional[str] = None):
     if job_id not in JOBS:
         job = db.get_job_by_job_id(job_id)
         if not job or job["status"] != "done":
@@ -525,11 +556,14 @@ async def result(job_id: str, filename: str):
     file_path = OUTPUT_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File missing")
-    return FileResponse(str(file_path), media_type="application/octet-stream", filename=filename)
+    download_name = name if name else filename
+    if not download_name.endswith(".dxf"):
+        download_name += ".dxf"
+    return FileResponse(str(file_path), media_type="application/octet-stream", filename=download_name)
 
 
 @app.get("/api/result/{job_id}")
-async def result_all(job_id: str):
+async def result_all(job_id: str, name: Optional[str] = None):
     if job_id not in JOBS:
         job = db.get_job_by_job_id(job_id)
         if not job or job["status"] != "done":
@@ -543,5 +577,8 @@ async def result_all(job_id: str):
         raise HTTPException(status_code=404, detail="No output files")
     if len(job["output_files"]) == 1:
         fname = job["output_files"][0]
-        return FileResponse(str(OUTPUT_DIR / fname), media_type="application/octet-stream", filename=fname)
+        download_name = name if name else fname
+        if not download_name.endswith(".dxf"):
+            download_name += ".dxf"
+        return FileResponse(str(OUTPUT_DIR / fname), media_type="application/octet-stream", filename=download_name)
     raise HTTPException(status_code=400, detail="Multiple sheets available, download individually")

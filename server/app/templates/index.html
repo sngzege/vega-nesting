@@ -343,16 +343,58 @@
             }
             html += `</div>`;
 
-            if (files.length === 1) {
-                html += `<div class="result-item"><a href="/api/result/${jobId}" download>Sonucu İndir (DXF)</a></div>`;
-            } else {
-                html += `<div class="result-item"><strong>Sonuç DXF'leri:</strong><br>`;
-                files.forEach(f => {
-                    html += `<a href="/api/result/${jobId}/${f}" download>${f}</a><br>`;
-                });
-                html += `</div>`;
-            }
+            html += `<div class="result-item">`;
+            html += `<label for="outputName" style="display:inline; margin-right:0.5rem;">Çıktı Adı:</label>`;
+            html += `<input type="text" id="outputName" placeholder="vega-cikti" style="width:200px; padding:0.4rem;">`;
+            html += `</div>`;
+
+            files.forEach((f, idx) => {
+                const sheetNum = idx + 1;
+                html += `<div class="result-item preview-item">`;
+                html += `<div class="preview-header"><strong>Sac ${sheetNum}</strong></div>`;
+                html += `<div class="preview-svg" id="preview-${jobId}-${sheetNum}"><p>Önizleme yükleniyor...</p></div>`;
+                html += `<div class="preview-download">`;
+                html += `<button type="button" class="primary" onclick="downloadWithName('${jobId}', '${f}', ${sheetNum})">İndir (DXF)</button>`;
+                html += `</div></div>`;
+            });
+
             container.innerHTML = html;
+
+            files.forEach((f, idx) => {
+                const sheetNum = idx + 1;
+                fetch(`/api/preview/${jobId}/${sheetNum}`)
+                    .then(resp => {
+                        if (!resp.ok) throw new Error('Preview failed');
+                        return resp.text();
+                    })
+                    .then(svg => {
+                        const previewDiv = document.getElementById(`preview-${jobId}-${sheetNum}`);
+                        previewDiv.innerHTML = svg;
+                        const svgEl = previewDiv.querySelector('svg');
+                        if (svgEl) {
+                            svgEl.style.width = '100%';
+                            svgEl.style.maxHeight = '300px';
+                            svgEl.style.background = '#fff';
+                        }
+                    })
+                    .catch(() => {
+                        const previewDiv = document.getElementById(`preview-${jobId}-${sheetNum}`);
+                        previewDiv.innerHTML = '<p style="color:#999;">Önizleme yüklenemedi</p>';
+                    });
+            });
+        }
+
+        function downloadWithName(jobId, filename, sheetNum) {
+            const nameInput = document.getElementById('outputName');
+            const baseName = nameInput ? nameInput.value.trim() : '';
+            const suffix = filename.replace(/\.dxf$/i, '');
+            const downloadName = baseName ? `${baseName}_sac${sheetNum}` : suffix;
+            const link = document.createElement('a');
+            link.href = `/api/result/${jobId}/${filename}?name=${encodeURIComponent(downloadName)}`;
+            link.download = downloadName + '.dxf';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         loadUser();

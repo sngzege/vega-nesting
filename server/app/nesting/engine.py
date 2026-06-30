@@ -79,7 +79,7 @@ def prepare_input_items(file_entries: List[Dict], space: float) -> Tuple[List[Di
 def run_lbf(input_json: dict, timeout: int = 3600) -> dict:
     lbf_path = shutil.which("lbf")
     if not lbf_path:
-        candidate = Path(__file__).resolve().parent / "lbf"
+        candidate = Path(__file__).resolve().parent.parent / "lbf"
         if candidate.is_file():
             lbf_path = str(candidate)
 

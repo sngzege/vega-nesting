@@ -81,10 +81,8 @@ def test_protected(client):
     assert resp.status_code == 401
 
 
-def test_nest_endpoint(client):
-    _login(client)
+def _run_nest(client):
     buf = _make_simple_dxf()
-
     mock_output = {
         "solution": {
             "layouts": [
@@ -102,7 +100,6 @@ def test_nest_endpoint(client):
             ]
         }
     }
-
     with patch("app.nesting.engine.run_lbf", return_value=mock_output):
         resp = client.post(
             "/api/nest",
@@ -119,11 +116,48 @@ def test_nest_endpoint(client):
                 ("files", ("test.dxf", buf, "application/octet-stream")),
             ],
         )
-
     assert resp.status_code == 200
-    data = resp.json()
-    assert "job_id" in data
-    job_id = data["job_id"]
+    return resp.json()["job_id"]
 
+
+def test_nest_endpoint(client):
+    _login(client)
+    job_id = _run_nest(client)
     status_data = _wait_for_job(client, job_id)
     assert status_data["status"] == "done"
+
+
+def test_preview_endpoint(client):
+    _login(client)
+    job_id = _run_nest(client)
+    status_data = _wait_for_job(client, job_id)
+    assert status_data["status"] == "done"
+
+    resp = client.get(f"/api/preview/{job_id}/1")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/svg+xml"
+    assert b"<svg" in resp.content
+
+    resp = client.get(f"/api/preview/{job_id}/999")
+    assert resp.status_code == 404
+
+    resp = client.get("/api/preview/nonexistent/1")
+    assert resp.status_code == 404
+
+
+def test_result_with_custom_name(client):
+    _login(client)
+    job_id = _run_nest(client)
+    status_data = _wait_for_job(client, job_id)
+    assert status_data["status"] == "done"
+
+    resp = client.get(f"/api/result/{job_id}?name=ozel-cikti")
+    assert resp.status_code == 200
+    cd = resp.headers.get("content-disposition", "")
+    assert "ozel-cikti.dxf" in cd
+
+    fname = status_data["output_files"][0]
+    resp = client.get(f"/api/result/{job_id}/{fname}?name=parca-1")
+    assert resp.status_code == 200
+    cd = resp.headers.get("content-disposition", "")
+    assert "parca-1.dxf" in cd
