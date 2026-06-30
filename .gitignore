@@ -43,8 +43,6 @@ nest2d-main/
 # Test artifacts
 .pytest_cache/
 
-nest2d-main
-
 # Build artifacts
 server/app/lbf
 server/app/jagua-rs/
