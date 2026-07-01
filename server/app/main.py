@@ -218,7 +218,7 @@ async def get_project_api(request: Request, project_id: int):
             "sheet_height": data["project"]["sheet_height"],
             "space": data["project"]["space"],
             "sheet_count": data["project"]["sheet_count"],
-            "sheet_material": data["project"]["sheet_material"],
+            "sheet_material": data["project"].get("sheet_material", "ST37"),
             "add_out_shape": bool(data["project"]["add_out_shape"]),
             "created_at": data["project"]["created_at"],
             "updated_at": data["project"]["updated_at"],
