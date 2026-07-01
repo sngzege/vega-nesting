@@ -127,7 +127,7 @@ def get_entities_from_dxf_file(dxf_path: str, handles: List[str]):
     return doc, entities
 
 
-def build_part(transforms: List[Transform], add_out_shape: bool = False, space: float = 0.0):
+def build_part(transforms: List[Transform], add_out_shape: bool = False, space: float = 0.0, sheet_width: Optional[float] = None, sheet_height: Optional[float] = None):
     new_doc = ezdxf.new()
     new_msp = new_doc.modelspace()
     added_entities = []
@@ -163,6 +163,20 @@ def build_part(transforms: List[Transform], add_out_shape: bool = False, space: 
             print(f"Error processing transform: {e}")
             raise e
 
+    if sheet_width is not None and sheet_height is not None:
+        try:
+            if "SHEET_FRAME" not in new_doc.layers:
+                new_doc.layers.new(name="SHEET_FRAME", dxfattribs={"color": 3})
+            points = [
+                (0.0, 0.0),
+                (sheet_width, 0.0),
+                (sheet_width, sheet_height),
+                (0.0, sheet_height),
+            ]
+            new_msp.add_lwpolyline(points, close=True, dxfattribs={"layer": "SHEET_FRAME"})
+        except Exception as e:
+            print(f"Failed to add sheet frame: {e}")
+
     if add_out_shape and added_entities:
         try:
             bbox = extents(added_entities)
@@ -188,6 +202,8 @@ def build_result_drawings(
     file_lookup: List[Dict],
     add_out_shape: bool = False,
     space: float = 0.0,
+    sheet_width: Optional[float] = None,
+    sheet_height: Optional[float] = None,
 ) -> List[ezdxf.document.Drawing]:
     drawings = []
     for layout in layouts:
@@ -209,7 +225,7 @@ def build_result_drawings(
                     angle=rotation,
                 )
             )
-        drawings.append(build_part(transforms, add_out_shape, space))
+        drawings.append(build_part(transforms, add_out_shape, space, sheet_width, sheet_height))
     return drawings
 
 
@@ -244,7 +260,8 @@ def nesting_process(
     total_placed = 0
 
     result_drawings = build_result_drawings(
-        file_entries, layouts, file_lookup, add_out_shape, space
+        file_entries, layouts, file_lookup, add_out_shape, space,
+        sheet_width=sheet_width, sheet_height=sheet_height,
     )
 
     for layout in layouts:
