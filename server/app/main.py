@@ -123,7 +123,6 @@ async def create_project(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    addOutShape: bool = Form(False),
     sheetMaterial: str = Form("ST37"),
     files: List[UploadFile] = File(...),
     counts: str = Form(...),
@@ -193,7 +192,6 @@ async def create_project(
         sheet_height=sheetHeight,
         space=space,
         sheet_count=9999,
-        add_out_shape=addOutShape,
         sheet_material=sheetMaterial,
         files=saved_files,
     )
@@ -219,7 +217,6 @@ async def get_project_api(request: Request, project_id: int):
             "space": data["project"]["space"],
             "sheet_count": data["project"]["sheet_count"],
             "sheet_material": data["project"].get("sheet_material", "ST37"),
-            "add_out_shape": bool(data["project"]["add_out_shape"]),
             "created_at": data["project"]["created_at"],
             "updated_at": data["project"]["updated_at"],
         },
@@ -254,7 +251,6 @@ async def update_project_api(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    addOutShape: bool = Form(False),
     sheetMaterial: str = Form("ST37"),
     files: List[UploadFile] = File(default=[]),
     counts: str = Form(...),
@@ -325,7 +321,6 @@ async def update_project_api(
         sheetHeight,
         space,
         9999,
-        addOutShape,
         sheet_material=sheetMaterial,
         files=saved_files,
     ):
@@ -340,7 +335,6 @@ def process_job(
     sheet_height: float,
     space: float,
     sheet_count: int,
-    add_out_shape: bool,
     file_entries: List[dict],
     sheet_material: str = "ST37",
     project_id: Optional[int] = None,
@@ -357,7 +351,6 @@ def process_job(
             sheet_height=sheet_height,
             space=space,
             sheet_count=sheet_count,
-            add_out_shape=add_out_shape,
             file_entries=file_entries,
             timeout=3600,
         )
@@ -433,7 +426,6 @@ async def nest(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    addOutShape: bool = Form(False),
     sheetMaterial: str = Form("ST37"),
     project_id: Optional[int] = Form(None),
     files: List[UploadFile] = File(default=[]),
@@ -537,7 +529,9 @@ async def nest(
             with open(file_path, "wb") as f:
                 shutil.copyfileobj(upload.file, f)
 
-            drawing = read_dxf(open(file_path, "rb"))
+            with open(file_path, "rb") as fh:
+                drawing = read_dxf(fh)
+
             if drawing is None:
                 raise HTTPException(status_code=400, detail=f"Could not parse DXF: {upload.filename}")
 
@@ -568,7 +562,6 @@ async def nest(
         sheetHeight,
         space,
         9999,
-        addOutShape,
         file_entries,
         sheetMaterial,
         db_project_id,

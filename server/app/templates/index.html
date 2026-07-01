@@ -57,13 +57,6 @@
             <option value="304">
         </datalist>
 
-        <div class="form-row">
-            <div style="display:flex; align-items:center; gap:0.5rem;">
-                <input type="checkbox" id="addOutShape" name="addOutShape">
-                <label for="addOutShape" style="margin:0;">Dış Çizgi Ekle (OUT_SHAPE)</label>
-            </div>
-        </div>
-
         <div id="fileInputSection">
             <h3>Parçalar</h3>
             <div id="fileRows">
@@ -294,7 +287,6 @@
             lastSheetHeight = parseFloat(formData.get('sheetHeight'));
             const space = formData.get('space');
             const sheetMaterial = formData.get('sheetMaterial') || 'ST37';
-            const addOutShape = formData.has('addOutShape');
 
             const files = formData.getAll('files');
             const counts = formData.getAll('count');
@@ -308,7 +300,6 @@
             fd.append('space', space);
             fd.append('sheetCount', '9999');
             fd.append('sheetMaterial', sheetMaterial);
-            fd.append('addOutShape', addOutShape ? 'true' : 'false');
             fd.append('counts', JSON.stringify(counts.map(Number)));
             fd.append('rotations', JSON.stringify(rotations.map(r => r ? r.split(',').map(Number) : [])));
             fd.append('fileMaterials', JSON.stringify(materials));

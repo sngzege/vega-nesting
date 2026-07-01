@@ -38,7 +38,7 @@ class TestSheetFrame:
         }]
         layouts = [{"placed_items": []}]
         file_lookup = [{"id": 0, "path": "dummy.dxf", "cleaned_path": "dummy.dxf", "handles": [], "slug": "f0"}]
-        drawings = build_result_drawings(file_entries, layouts, file_lookup, add_out_shape=True, space=0, sheet_width=1000, sheet_height=2000)
+        drawings = build_result_drawings(file_entries, layouts, file_lookup, space=0, sheet_width=1000, sheet_height=2000)
         assert len(drawings) == 1
         doc = drawings[0]
         has_frame = any(e.dxf.layer == "SHEET_FRAME" for e in doc.modelspace())

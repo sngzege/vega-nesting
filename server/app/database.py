@@ -42,7 +42,6 @@ def init_db():
             sheet_height REAL,
             space REAL,
             sheet_count INTEGER,
-            add_out_shape INTEGER DEFAULT 0,
             status TEXT DEFAULT 'draft',
             sheet_material TEXT DEFAULT 'ST37',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -172,7 +171,6 @@ def create_project(
     sheet_height: float,
     space: float,
     sheet_count: int,
-    add_out_shape: bool,
     files: list,
     sheet_material: str = "ST37",
 ) -> int:
@@ -181,8 +179,8 @@ def create_project(
 
     cursor.execute(
         """
-        INSERT INTO projects (session_id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, sheet_material)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO projects (session_id, name, sheet_width, sheet_height, space, sheet_count, sheet_material)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
@@ -191,7 +189,6 @@ def create_project(
             sheet_height,
             space,
             sheet_count,
-            1 if add_out_shape else 0,
             sheet_material,
         ),
     )
@@ -232,7 +229,6 @@ def update_project(
     sheet_height: float,
     space: float,
     sheet_count: int,
-    add_out_shape: bool,
     files: list,
     sheet_material: str = "ST37",
 ) -> bool:
@@ -242,7 +238,7 @@ def update_project(
     cursor.execute(
         """
         UPDATE projects
-        SET name = ?, sheet_width = ?, sheet_height = ?, space = ?, sheet_count = ?, add_out_shape = ?, sheet_material = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?, sheet_width = ?, sheet_height = ?, space = ?, sheet_count = ?, sheet_material = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND session_id = ?
         """,
         (
@@ -251,7 +247,6 @@ def update_project(
             sheet_height,
             space,
             sheet_count,
-            1 if add_out_shape else 0,
             sheet_material,
             project_id,
             session_id,
@@ -295,7 +290,7 @@ def get_projects(session_id: str):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, sheet_material, created_at, updated_at
+        SELECT id, name, sheet_width, sheet_height, space, sheet_count, status, sheet_material, created_at, updated_at
         FROM projects
         WHERE session_id = ?
         ORDER BY updated_at DESC
@@ -312,7 +307,7 @@ def get_project(session_id: str, project_id: int):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, sheet_material, created_at, updated_at
+        SELECT id, name, sheet_width, sheet_height, space, sheet_count, status, sheet_material, created_at, updated_at
         FROM projects
         WHERE id = ? AND session_id = ?
         """,

@@ -127,7 +127,7 @@ def get_entities_from_dxf_file(dxf_path: str, handles: List[str]):
     return doc, entities
 
 
-def build_part(transforms: List[Transform], add_out_shape: bool = False, space: float = 0.0, sheet_width: Optional[float] = None, sheet_height: Optional[float] = None):
+def build_part(transforms: List[Transform], space: float = 0.0, sheet_width: Optional[float] = None, sheet_height: Optional[float] = None):
     new_doc = ezdxf.new()
     new_msp = new_doc.modelspace()
     added_entities = []
@@ -177,22 +177,6 @@ def build_part(transforms: List[Transform], add_out_shape: bool = False, space: 
         except Exception as e:
             print(f"Failed to add sheet frame: {e}")
 
-    if add_out_shape and added_entities:
-        try:
-            bbox = extents(added_entities)
-            if bbox.has_data:
-                if "OUT_SHAPE" not in new_doc.layers:
-                    new_doc.layers.new(name="OUT_SHAPE", dxfattribs={"color": 1})
-                points = [
-                    (bbox.extmin.x - space, bbox.extmin.y - space),
-                    (bbox.extmax.x + space, bbox.extmin.y - space),
-                    (bbox.extmax.x + space, bbox.extmax.y + space),
-                    (bbox.extmin.x - space, bbox.extmax.y + space),
-                ]
-                new_msp.add_lwpolyline(points, close=True, dxfattribs={"layer": "OUT_SHAPE"})
-        except Exception as e:
-            print(f"Failed to add bounding box: {e}")
-
     return new_doc
 
 
@@ -200,7 +184,6 @@ def build_result_drawings(
     file_entries: List[Dict],
     layouts: List[Dict],
     file_lookup: List[Dict],
-    add_out_shape: bool = False,
     space: float = 0.0,
     sheet_width: Optional[float] = None,
     sheet_height: Optional[float] = None,
@@ -225,7 +208,7 @@ def build_result_drawings(
                     angle=rotation,
                 )
             )
-        drawings.append(build_part(transforms, add_out_shape, space, sheet_width, sheet_height))
+        drawings.append(build_part(transforms, space, sheet_width, sheet_height))
     return drawings
 
 
@@ -234,7 +217,6 @@ def nesting_process(
     sheet_height: float,
     space: float,
     sheet_count: int,
-    add_out_shape: bool,
     file_entries: List[Dict],
     timeout: int = 3600,
 ) -> Tuple[List[ezdxf.document.Drawing], Dict]:
@@ -260,8 +242,8 @@ def nesting_process(
     total_placed = 0
 
     result_drawings = build_result_drawings(
-        file_entries, layouts, file_lookup, add_out_shape, space,
-        sheet_width=sheet_width, sheet_height=sheet_height,
+        file_entries, layouts, file_lookup, space,
+        sheet_width=sheet_width, sheet_height=sheet_height
     )
 
     for layout in layouts:

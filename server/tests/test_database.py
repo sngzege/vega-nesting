@@ -44,7 +44,7 @@ def test_project_crud():
             "rotations": [0, 90],
         }
     ]
-    pid = db.create_project(sid, "Test", 100.0, 200.0, 1.0, 1, False, files)
+    pid = db.create_project(sid, "Test", 100.0, 200.0, 1.0, 1, files)
     assert pid > 0
 
     projects = db.get_projects(sid)
