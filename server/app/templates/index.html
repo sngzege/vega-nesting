@@ -42,10 +42,20 @@
                 <input type="number" id="space" name="space" step="0.1" value="0">
             </div>
             <div>
-                <label for="sheetCount">Maks. Sac Adedi</label>
-                <input type="number" id="sheetCount" name="sheetCount" step="1" value="1" min="1">
+                <label for="sheetMaterial">Sac Malzemesi</label>
+                <input type="text" id="sheetMaterial" name="sheetMaterial" list="materialList" value="ST37" placeholder="ST37">
+            </div>
+            <div style="display:none;">
+                <input type="hidden" id="sheetCount" name="sheetCount" value="9999">
             </div>
         </div>
+
+        <datalist id="materialList">
+            <option value="ST37">
+            <option value="ST52">
+            <option value="ALM">
+            <option value="304">
+        </datalist>
 
         <div class="form-row">
             <div style="display:flex; align-items:center; gap:0.5rem;">
@@ -61,6 +71,8 @@
                     <input type="file" name="files" accept=".dxf" required>
                     <input type="number" name="count" value="1" min="1" placeholder="Adet">
                     <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                    <input type="text" name="material" placeholder="Malzeme" list="materialList" style="width:80px;">
+                    <input type="text" name="thickness" placeholder="Kalınlık" style="width:80px;">
                     <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
                 </div>
             </div>
@@ -188,7 +200,7 @@
                 document.getElementById('sheetWidth').value = data.project.sheet_width;
                 document.getElementById('sheetHeight').value = data.project.sheet_height;
                 document.getElementById('space').value = data.project.space;
-                document.getElementById('sheetCount').value = data.project.sheet_count;
+                document.getElementById('sheetMaterial').value = data.project.sheet_material || 'ST37';
                 document.getElementById('addOutShape').checked = !!data.project.add_out_shape;
                 document.getElementById('projectName').value = data.project.name;
 
@@ -198,7 +210,10 @@
                 list.innerHTML = '';
                 data.files.forEach(f => {
                     const li = document.createElement('li');
-                    li.innerHTML = `<strong>${escapeHtml(f.filename)}</strong> - Adet: ${f.count} - Dönüşler: ${Array.isArray(f.rotations) ? f.rotations.join(',') : ''}`;
+                    const mat = f.material || '';
+                    const thick = f.thickness || '';
+                    const details = [mat, thick].filter(Boolean).join(' - ');
+                    li.innerHTML = `<strong>${escapeHtml(f.filename)}</strong> - Adet: ${f.count}${details ? ' - ' + details : ''}`;
                     list.appendChild(li);
                 });
 
@@ -240,6 +255,8 @@
                     <input type="file" name="files" accept=".dxf" required>
                     <input type="number" name="count" value="1" min="1" placeholder="Adet">
                     <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                    <input type="text" name="material" placeholder="Malzeme" list="materialList" style="width:80px;">
+                    <input type="text" name="thickness" placeholder="Kalınlık" style="width:80px;">
                     <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
                 </div>
             `;
@@ -253,6 +270,8 @@
                 <input type="file" name="files" accept=".dxf" required>
                 <input type="number" name="count" value="1" min="1" placeholder="Adet">
                 <input type="text" name="rotations" placeholder="Dönüşler (0,90,180,270)">
+                <input type="text" name="material" placeholder="Malzeme" list="materialList" style="width:80px;">
+                <input type="text" name="thickness" placeholder="Kalınlık" style="width:80px;">
                 <button type="button" class="danger" onclick="removeRow(this)">Sil</button>
             `;
             container.appendChild(div);
@@ -274,21 +293,26 @@
             lastSheetWidth = parseFloat(formData.get('sheetWidth'));
             lastSheetHeight = parseFloat(formData.get('sheetHeight'));
             const space = formData.get('space');
-            const sheetCount = formData.get('sheetCount');
+            const sheetMaterial = formData.get('sheetMaterial') || 'ST37';
             const addOutShape = formData.has('addOutShape');
 
             const files = formData.getAll('files');
             const counts = formData.getAll('count');
             const rotations = formData.getAll('rotations');
+            const materials = formData.getAll('material');
+            const thicknesses = formData.getAll('thickness');
 
             const fd = new FormData();
             fd.append('sheetWidth', lastSheetWidth);
             fd.append('sheetHeight', lastSheetHeight);
             fd.append('space', space);
-            fd.append('sheetCount', sheetCount);
+            fd.append('sheetCount', '9999');
+            fd.append('sheetMaterial', sheetMaterial);
             fd.append('addOutShape', addOutShape ? 'true' : 'false');
             fd.append('counts', JSON.stringify(counts.map(Number)));
             fd.append('rotations', JSON.stringify(rotations.map(r => r ? r.split(',').map(Number) : [])));
+            fd.append('fileMaterials', JSON.stringify(materials));
+            fd.append('fileThicknesses', JSON.stringify(thicknesses));
 
             const activeProjectId = localStorage.getItem(activeProjectIdKey);
             if (activeProjectId) {
@@ -401,7 +425,7 @@
             let html = `<div class="result-item success"><strong>Tamamlandı</strong><br>`;
             html += `İstenen: ${stats.requested} parça<br>`;
             html += `Yerleştirilen: ${stats.placed} parça<br>`;
-            html += `Kullanılan sac: ${stats.sheet_count} adet<br>`;
+            html += `Gereken Sac Adedi: ${stats.sheet_count} adet<br>`;
             if (!stats.is_all_placed) {
                 html += `<span style="color:#dc2626">Uyarı: Tüm parçalar yerleştirilemedi!</span>`;
             }
@@ -422,6 +446,10 @@
                 html += `<button type="button" class="primary" onclick="downloadWithName('${jobId}', '${f}', ${sheetNum})">İndir (DXF)</button>`;
                 html += `</div></div>`;
             });
+
+            html += `<div class="result-item">`;
+            html += `<button type="button" class="secondary" onclick="downloadAll('${jobId}')">Tümünü İndir (ZIP)</button>`;
+            html += `</div>`;
 
             container.innerHTML = html;
 
@@ -462,6 +490,10 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+
+        function downloadAll(jobId) {
+            window.location.href = `/api/result/${jobId}/all`;
         }
 
         loadUser();
