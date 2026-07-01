@@ -44,6 +44,7 @@ def init_db():
             sheet_count INTEGER,
             add_out_shape INTEGER DEFAULT 0,
             status TEXT DEFAULT 'draft',
+            sheet_material TEXT DEFAULT 'ST37',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
@@ -58,6 +59,8 @@ def init_db():
             count INTEGER NOT NULL,
             rotations TEXT,
             sort_order INTEGER,
+            material TEXT,
+            thickness TEXT,
             FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
         );
 
@@ -71,6 +74,7 @@ def init_db():
             sheet_count INTEGER,
             is_all_placed INTEGER,
             output_files TEXT,
+            output_names TEXT,
             error TEXT,
             started_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -79,6 +83,23 @@ def init_db():
         );
         """
     )
+
+    cursor.execute("PRAGMA table_info(projects)")
+    project_cols = {row["name"] for row in cursor.fetchall()}
+    if "sheet_material" not in project_cols:
+        cursor.execute("ALTER TABLE projects ADD COLUMN sheet_material TEXT DEFAULT 'ST37'")
+
+    cursor.execute("PRAGMA table_info(project_files)")
+    file_cols = {row["name"] for row in cursor.fetchall()}
+    if "material" not in file_cols:
+        cursor.execute("ALTER TABLE project_files ADD COLUMN material TEXT")
+    if "thickness" not in file_cols:
+        cursor.execute("ALTER TABLE project_files ADD COLUMN thickness TEXT")
+
+    cursor.execute("PRAGMA table_info(jobs)")
+    job_cols = {row["name"] for row in cursor.fetchall()}
+    if "output_names" not in job_cols:
+        cursor.execute("ALTER TABLE jobs ADD COLUMN output_names TEXT")
 
     conn.commit()
     conn.close()
@@ -153,14 +174,15 @@ def create_project(
     sheet_count: int,
     add_out_shape: bool,
     files: list,
+    sheet_material: str = "ST37",
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         """
-        INSERT INTO projects (session_id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO projects (session_id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, sheet_material)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
@@ -170,6 +192,7 @@ def create_project(
             space,
             sheet_count,
             1 if add_out_shape else 0,
+            sheet_material,
         ),
     )
     project_id = cursor.lastrowid
@@ -178,8 +201,8 @@ def create_project(
         cursor.execute(
             """
             INSERT INTO project_files
-                (project_id, filename, original_content, cleaned_content, count, rotations, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (project_id, filename, original_content, cleaned_content, count, rotations, sort_order, material, thickness)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
@@ -191,6 +214,8 @@ def create_project(
                     f.get("rotations", [0.0, 90.0, 180.0, 270.0])
                 ),
                 idx,
+                f.get("material"),
+                f.get("thickness"),
             ),
         )
 
@@ -209,6 +234,7 @@ def update_project(
     sheet_count: int,
     add_out_shape: bool,
     files: list,
+    sheet_material: str = "ST37",
 ) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
@@ -216,7 +242,7 @@ def update_project(
     cursor.execute(
         """
         UPDATE projects
-        SET name = ?, sheet_width = ?, sheet_height = ?, space = ?, sheet_count = ?, add_out_shape = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?, sheet_width = ?, sheet_height = ?, space = ?, sheet_count = ?, add_out_shape = ?, sheet_material = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND session_id = ?
         """,
         (
@@ -226,6 +252,7 @@ def update_project(
             space,
             sheet_count,
             1 if add_out_shape else 0,
+            sheet_material,
             project_id,
             session_id,
         ),
@@ -240,8 +267,8 @@ def update_project(
         cursor.execute(
             """
             INSERT INTO project_files
-                (project_id, filename, original_content, cleaned_content, count, rotations, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (project_id, filename, original_content, cleaned_content, count, rotations, sort_order, material, thickness)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
@@ -253,6 +280,8 @@ def update_project(
                     f.get("rotations", [0.0, 90.0, 180.0, 270.0])
                 ),
                 idx,
+                f.get("material"),
+                f.get("thickness"),
             ),
         )
 
@@ -266,7 +295,7 @@ def get_projects(session_id: str):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, created_at, updated_at
+        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, sheet_material, created_at, updated_at
         FROM projects
         WHERE session_id = ?
         ORDER BY updated_at DESC
@@ -283,7 +312,7 @@ def get_project(session_id: str, project_id: int):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, created_at, updated_at
+        SELECT id, name, sheet_width, sheet_height, space, sheet_count, add_out_shape, status, sheet_material, created_at, updated_at
         FROM projects
         WHERE id = ? AND session_id = ?
         """,
@@ -296,7 +325,7 @@ def get_project(session_id: str, project_id: int):
 
     cursor.execute(
         """
-        SELECT id, filename, count, rotations, sort_order
+        SELECT id, filename, count, rotations, sort_order, material, thickness
         FROM project_files
         WHERE project_id = ?
         ORDER BY sort_order

@@ -57,3 +57,18 @@ def test_project_crud():
 
     assert db.delete_project(sid, pid)
     assert len(db.get_projects(sid)) == 0
+
+
+def test_project_schema_has_new_columns(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DATABASE_PATH", tmp_path / "test.db")
+    db.init_db()
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(projects)")
+    cols = {row["name"] for row in cursor.fetchall()}
+    assert "sheet_material" in cols
+    cursor.execute("PRAGMA table_info(project_files)")
+    cols = {row["name"] for row in cursor.fetchall()}
+    assert "material" in cols
+    assert "thickness" in cols
+    conn.close()
