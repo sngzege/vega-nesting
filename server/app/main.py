@@ -2,7 +2,8 @@ import os
 import uuid
 import shutil
 import json
-from io import StringIO
+import zipfile
+from io import BytesIO, StringIO
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -20,6 +21,7 @@ from .nesting.build_geometry import build_geometry
 from .nesting.engine import nesting_process
 from .nesting.input_builder import build_item
 from .nesting.svg_generator import create_svg_from_doc
+from .nesting.dxf_naming import parse_dxf_filename, generate_default_output_name
 
 app = FastAPI(title="Vega Nesting")
 
@@ -121,11 +123,13 @@ async def create_project(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    sheetCount: int = Form(1),
     addOutShape: bool = Form(False),
+    sheetMaterial: str = Form("ST37"),
     files: List[UploadFile] = File(...),
     counts: str = Form(...),
     rotations: str = Form(default="[]"),
+    fileMaterials: str = Form(default="[]"),
+    fileThicknesses: str = Form(default="[]"),
 ):
     session = request.state.session
     if not session:
@@ -140,6 +144,16 @@ async def create_project(
         rotations_list = json.loads(rotations)
     except Exception:
         rotations_list = [[] for _ in files]
+
+    try:
+        file_materials = json.loads(fileMaterials) if fileMaterials else []
+    except Exception:
+        file_materials = []
+
+    try:
+        file_thicknesses = json.loads(fileThicknesses) if fileThicknesses else []
+    except Exception:
+        file_thicknesses = []
 
     if len(counts_list) != len(files):
         raise HTTPException(status_code=400, detail="Length of counts must match number of files")
@@ -157,6 +171,9 @@ async def create_project(
         drawing.write(buf)
         cleaned_bytes = buf.getvalue().encode("utf-8")
 
+        parsed = parse_dxf_filename(upload.filename)
+        material_override = file_materials[idx] if idx < len(file_materials) and file_materials[idx] else None
+        thickness_override = file_thicknesses[idx] if idx < len(file_thicknesses) and file_thicknesses[idx] else None
         saved_files.append(
             {
                 "filename": upload.filename,
@@ -164,6 +181,8 @@ async def create_project(
                 "cleaned_content": cleaned_bytes,
                 "count": counts_list[idx],
                 "rotations": rotations_list[idx] if rotations_list[idx] else [0.0, 90.0, 180.0, 270.0],
+                "material": material_override or parsed.get("material") or sheetMaterial,
+                "thickness": thickness_override or parsed.get("thickness"),
             }
         )
 
@@ -173,8 +192,9 @@ async def create_project(
         sheet_width=sheetWidth,
         sheet_height=sheetHeight,
         space=space,
-        sheet_count=sheetCount,
+        sheet_count=9999,
         add_out_shape=addOutShape,
+        sheet_material=sheetMaterial,
         files=saved_files,
     )
 
@@ -198,6 +218,7 @@ async def get_project_api(request: Request, project_id: int):
             "sheet_height": data["project"]["sheet_height"],
             "space": data["project"]["space"],
             "sheet_count": data["project"]["sheet_count"],
+            "sheet_material": data["project"]["sheet_material"],
             "add_out_shape": bool(data["project"]["add_out_shape"]),
             "created_at": data["project"]["created_at"],
             "updated_at": data["project"]["updated_at"],
@@ -207,6 +228,8 @@ async def get_project_api(request: Request, project_id: int):
                 "filename": f["filename"],
                 "count": f["count"],
                 "rotations": json.loads(f["rotations"]) if f["rotations"] else [0.0, 90.0, 180.0, 270.0],
+                "material": f.get("material"),
+                "thickness": f.get("thickness"),
             }
             for f in data["files"]
         ],
@@ -231,11 +254,13 @@ async def update_project_api(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    sheetCount: int = Form(1),
     addOutShape: bool = Form(False),
+    sheetMaterial: str = Form("ST37"),
     files: List[UploadFile] = File(default=[]),
     counts: str = Form(...),
     rotations: str = Form(default="[]"),
+    fileMaterials: str = Form(default="[]"),
+    fileThicknesses: str = Form(default="[]"),
 ):
     session = request.state.session
     if not session:
@@ -250,6 +275,16 @@ async def update_project_api(
         rotations_list = json.loads(rotations)
     except Exception:
         rotations_list = [[] for _ in files]
+
+    try:
+        file_materials = json.loads(fileMaterials) if fileMaterials else []
+    except Exception:
+        file_materials = []
+
+    try:
+        file_thicknesses = json.loads(fileThicknesses) if fileThicknesses else []
+    except Exception:
+        file_thicknesses = []
 
     if len(counts_list) != len(files):
         raise HTTPException(status_code=400, detail="Length of counts must match number of files")
@@ -267,6 +302,9 @@ async def update_project_api(
         drawing.write(buf)
         cleaned_bytes = buf.getvalue().encode("utf-8")
 
+        parsed = parse_dxf_filename(upload.filename)
+        material_override = file_materials[idx] if idx < len(file_materials) and file_materials[idx] else None
+        thickness_override = file_thicknesses[idx] if idx < len(file_thicknesses) and file_thicknesses[idx] else None
         saved_files.append(
             {
                 "filename": upload.filename,
@@ -274,6 +312,8 @@ async def update_project_api(
                 "cleaned_content": cleaned_bytes,
                 "count": counts_list[idx],
                 "rotations": rotations_list[idx] if rotations_list[idx] else [0.0, 90.0, 180.0, 270.0],
+                "material": material_override or parsed.get("material") or sheetMaterial,
+                "thickness": thickness_override or parsed.get("thickness"),
             }
         )
 
@@ -284,9 +324,10 @@ async def update_project_api(
         sheetWidth,
         sheetHeight,
         space,
-        sheetCount,
+        9999,
         addOutShape,
-        saved_files,
+        sheet_material=sheetMaterial,
+        files=saved_files,
     ):
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -301,6 +342,7 @@ def process_job(
     sheet_count: int,
     add_out_shape: bool,
     file_entries: List[dict],
+    sheet_material: str = "ST37",
     project_id: Optional[int] = None,
 ):
     JOBS[job_id]["status"] = "processing"
@@ -320,16 +362,31 @@ def process_job(
             timeout=3600,
         )
         output_files = []
+        output_names = []
         for idx, drawing in enumerate(drawings, start=1):
+            part_name = file_entries[0]["path"].split("/")[-1] if file_entries else "part"
+            display_name = generate_default_output_name(
+                unique_parts=len(file_entries),
+                part_name=part_name,
+                material=file_entries[0].get("material") if file_entries else None,
+                thickness=file_entries[0].get("thickness") if file_entries else None,
+                part_quantity=file_entries[0]["count"] if file_entries else 1,
+                sheet_material=sheet_material,
+                sheet_width=sheet_width,
+                sheet_height=sheet_height,
+                sheet_count=stats["sheet_count"],
+            )
             out_path = OUTPUT_DIR / f"{job_id}_sheet_{idx}.dxf"
             drawing.saveas(str(out_path))
             output_files.append(str(out_path.name))
+            output_names.append(display_name)
 
         JOBS[job_id].update(
             {
                 "status": "done",
                 "stats": stats,
                 "output_files": output_files,
+                "output_names": output_names,
             }
         )
         db.update_job(
@@ -340,6 +397,7 @@ def process_job(
             sheet_count=stats["sheet_count"],
             is_all_placed=1 if stats["is_all_placed"] else 0,
             output_files=output_files,
+            output_names=json.dumps(output_names),
             finished_at=datetime.now().isoformat(),
         )
     except Exception as e:
@@ -375,12 +433,14 @@ async def nest(
     sheetWidth: float = Form(...),
     sheetHeight: float = Form(...),
     space: float = Form(...),
-    sheetCount: int = Form(1),
     addOutShape: bool = Form(False),
+    sheetMaterial: str = Form("ST37"),
     project_id: Optional[int] = Form(None),
     files: List[UploadFile] = File(default=[]),
     counts: str = Form(...),
     rotations: str = Form(default="[]"),
+    fileMaterials: str = Form(default="[]"),
+    fileThicknesses: str = Form(default="[]"),
 ):
     session = request.state.session
     if not session:
@@ -396,6 +456,16 @@ async def nest(
     except Exception:
         rotations_list = [[] for _ in files]
 
+    try:
+        file_materials = json.loads(fileMaterials) if fileMaterials else []
+    except Exception:
+        file_materials = []
+
+    try:
+        file_thicknesses = json.loads(fileThicknesses) if fileThicknesses else []
+    except Exception:
+        file_thicknesses = []
+
     if not project_id and not files:
         raise HTTPException(status_code=400, detail="Files or project_id required")
 
@@ -405,11 +475,18 @@ async def nest(
     if not project_id and len(rotations_list) != len(files):
         rotations_list = [[] for _ in files]
 
+    if not project_id and len(file_materials) != len(files):
+        file_materials = ["" for _ in files]
+
+    if not project_id and len(file_thicknesses) != len(files):
+        file_thicknesses = ["" for _ in files]
+
     job_id = str(uuid.uuid4())
     JOBS[job_id] = {
         "status": "pending",
         "stats": None,
         "output_files": [],
+        "output_names": [],
         "error": None,
         "sheet_width": sheetWidth,
         "sheet_height": sheetHeight,
@@ -422,7 +499,6 @@ async def nest(
             raise HTTPException(status_code=404, detail="Project not found")
         db_project_id = project_id
     elif session:
-        # no project_id, but we can associate with a dummy project later if needed
         pass
 
     db.create_job(db_project_id, job_id)
@@ -441,6 +517,9 @@ async def nest(
             parts = build_geometry(drawing, tolerance=0.1)
             temp_path = job_upload_dir / f["filename"]
             drawing.saveas(str(temp_path))
+            parsed = parse_dxf_filename(f["filename"])
+            material = f.get("material") or parsed.get("material") or proj["project"]["sheet_material"]
+            thickness = f.get("thickness") or parsed.get("thickness")
             file_entries.append(
                 {
                     "path": str(temp_path),
@@ -448,6 +527,8 @@ async def nest(
                     "parts": parts,
                     "count": f["count"],
                     "rotations": json.loads(f["rotations"]) if f["rotations"] else [0.0, 90.0, 180.0, 270.0],
+                    "material": material,
+                    "thickness": thickness,
                 }
             )
     else:
@@ -465,6 +546,9 @@ async def nest(
             cleaned_path = job_upload_dir / f"cleaned_{upload.filename}"
             drawing.saveas(str(cleaned_path))
 
+            parsed = parse_dxf_filename(upload.filename)
+            material_override = file_materials[idx] if idx < len(file_materials) and file_materials[idx] else None
+            thickness_override = file_thicknesses[idx] if idx < len(file_thicknesses) and file_thicknesses[idx] else None
             file_entries.append(
                 {
                     "path": str(file_path),
@@ -472,6 +556,8 @@ async def nest(
                     "parts": parts,
                     "count": counts_list[idx],
                     "rotations": rotations_list[idx] if rotations_list[idx] else [0.0, 90.0, 180.0, 270.0],
+                    "material": material_override or parsed.get("material") or sheetMaterial,
+                    "thickness": thickness_override or parsed.get("thickness"),
                 }
             )
 
@@ -481,9 +567,10 @@ async def nest(
         sheetWidth,
         sheetHeight,
         space,
-        sheetCount,
+        9999,
         addOutShape,
         file_entries,
+        sheetMaterial,
         db_project_id,
     )
 
@@ -505,6 +592,7 @@ async def status(job_id: str):
                 "is_all_placed": bool(job["is_all_placed"]),
             } if job["requested"] is not None else None,
             "output_files": json.loads(job["output_files"]) if job["output_files"] else [],
+            "output_names": json.loads(job["output_names"]) if job["output_names"] else [],
             "error": job["error"],
         }
     job = JOBS[job_id]
@@ -512,6 +600,7 @@ async def status(job_id: str):
         "status": job["status"],
         "stats": job.get("stats"),
         "output_files": job.get("output_files"),
+        "output_names": job.get("output_names"),
         "error": job.get("error"),
     }
 
@@ -550,6 +639,35 @@ async def preview(job_id: str, sheet_index: int):
         sheet_height=float(sh) if sh else None,
     )
     return Response(content=svg_str, media_type="image/svg+xml")
+
+
+@app.get("/api/result/{job_id}/all")
+async def result_all_zip(job_id: str):
+    if job_id not in JOBS:
+        job = db.get_job_by_job_id(job_id)
+        if not job or job["status"] != "done":
+            raise HTTPException(status_code=400, detail="Job not completed yet")
+    else:
+        job = JOBS[job_id]
+        if job["status"] != "done":
+            raise HTTPException(status_code=400, detail="Job not completed yet")
+
+    raw = job.get("output_files", [])
+    output_files = json.loads(raw) if isinstance(raw, str) else raw
+    names = job.get("output_names", [])
+    names = json.loads(names) if isinstance(names, str) else names
+    if not output_files:
+        raise HTTPException(status_code=404, detail="No output files")
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for idx, fname in enumerate(output_files):
+            file_path = OUTPUT_DIR / fname
+            if not file_path.exists():
+                continue
+            arcname = f"{names[idx]}.dxf" if idx < len(names) and names[idx] else fname
+            zf.write(str(file_path), arcname=arcname)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/zip", headers={"Content-Disposition": "attachment; filename=vega-cikti.zip"})
 
 
 @app.get("/api/result/{job_id}/{filename}")

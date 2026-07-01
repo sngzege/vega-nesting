@@ -161,3 +161,75 @@ def test_result_with_custom_name(client):
     assert resp.status_code == 200
     cd = resp.headers.get("content-disposition", "")
     assert "parca-1.dxf" in cd
+
+
+def test_nest_without_sheetcount_with_material(client):
+    buf = _make_simple_dxf()
+    mock_output = {
+        "solution": {
+            "layouts": [
+                {
+                    "placed_items": [
+                        {"item_id": 0, "transformation": {"rotation": 0.0, "translation": [0.0, 0.0]}},
+                        {"item_id": 0, "transformation": {"rotation": 0.0, "translation": [10.0, 0.0]}},
+                    ]
+                }
+            ]
+        }
+    }
+    _login(client)
+    with patch("app.nesting.engine.run_lbf", return_value=mock_output):
+        resp = client.post(
+            "/api/nest",
+            data={
+                "sheetWidth": "100",
+                "sheetHeight": "100",
+                "space": "0",
+                "sheetCount": "9999",
+                "addOutShape": "false",
+                "sheetMaterial": "ST52",
+                "counts": "[2]",
+                "rotations": "[]",
+            },
+            files=[
+                ("files", ("partA-ST52-5mm-2adet.dxf", buf, "application/octet-stream")),
+            ],
+        )
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    data = _wait_for_job(client, job_id)
+    assert data["status"] == "done"
+    assert data["stats"]["sheet_count"] == 1
+    assert len(data["output_files"]) == 1
+    fname = data["output_files"][0]
+    resp = client.get(f"/api/result/{job_id}/{fname}")
+    assert resp.status_code == 200
+    resp = client.get(f"/api/result/{job_id}/all")
+    assert resp.headers["content-type"] == "application/zip"
+
+
+def test_project_saves_material(client):
+    _login(client)
+    buf = _make_simple_dxf()
+    resp = client.post(
+        "/api/projects",
+        data={
+            "name": "MatTest",
+            "sheetWidth": "1000",
+            "sheetHeight": "2000",
+            "space": "1",
+            "sheetCount": "9999",
+            "addOutShape": "false",
+            "sheetMaterial": "ALM",
+            "counts": "[1]",
+            "rotations": "[]",
+        },
+        files=[("files", ("part-ALM-3mm.dxf", buf, "application/octet-stream"))],
+    )
+    assert resp.status_code == 200
+    pid = resp.json()["project_id"]
+    resp = client.get(f"/api/projects/{pid}")
+    proj = resp.json()
+    assert proj["project"]["sheet_material"] == "ALM"
+    assert proj["files"][0]["material"] == "ALM"
+    assert proj["files"][0]["thickness"] == "3mm"
